@@ -22,16 +22,22 @@ class AppVersionChecker {
   /// default will be `AndroidStore.GooglePlayStore`
   final AndroidStore androidStore;
 
+  /// The list of ISO-2A country codes used in the app look-up
+  /// if [appStoreCountryCodes] is null the look-up will be base in the US store only
+  final List<String>? appStoreCountryCodes;
+
   AppVersionChecker({
     this.currentVersion,
     this.appId,
     this.androidStore = AndroidStore.googlePlayStore,
+    this.appStoreCountryCodes,
   });
 
   Future<AppCheckerResult> checkUpdate() async {
     PackageInfo packageInfo = await PackageInfo.fromPlatform();
     final _currentVersion = currentVersion ?? packageInfo.version;
     final _packageName = appId ?? packageInfo.packageName;
+    final _countryCodes = appStoreCountryCodes ?? [];
     if (Platform.isAndroid) {
       switch (androidStore) {
         case AndroidStore.apkPure:
@@ -40,31 +46,32 @@ class AppVersionChecker {
           return await _checkPlayStore(_currentVersion, _packageName);
       }
     } else if (Platform.isIOS) {
-      return await _checkAppleStore(_currentVersion, _packageName);
+      return await _checkAppleStore(
+          _currentVersion, _packageName, _countryCodes);
     } else {
       return AppCheckerResult(_currentVersion, null, "",
           'The target platform "${Platform.operatingSystem}" is not yet supported by this package.');
     }
   }
 
-  Future<AppCheckerResult> _checkAppleStore(
-      String currentVersion, String packageName) async {
+  Future<AppCheckerResult> _checkAppleStore(String currentVersion,
+      String packageName, List<String> countryCodes) async {
     String? errorMsg;
     String? newVersion;
     String? url;
-    var uri =
-        Uri.https("itunes.apple.com", "/lookup", {"bundleId": packageName});
+    var uri = Uri.https("itunes.apple.com", "/lookup",
+        {"bundleId": packageName, "country": countryCodes});
     try {
       final response = await http.get(uri);
       if (response.statusCode != 200) {
         errorMsg =
-            "Can't find an app in the Apple Store with the id: $packageName";
+        "Can't find an app in the Apple Store with the id: $packageName";
       } else {
         final jsonObj = jsonDecode(response.body);
         final List results = jsonObj['results'];
         if (results.isEmpty) {
           errorMsg =
-              "Can't find an app in the Apple Store with the id: $packageName";
+          "Can't find an app in the Apple Store with the id: $packageName";
         } else {
           newVersion = jsonObj['results'][0]['version'];
           url = jsonObj['results'][0]['trackViewUrl'];
@@ -92,7 +99,7 @@ class AppVersionChecker {
       final response = await http.get(uri);
       if (response.statusCode != 200) {
         errorMsg =
-            "Can't find an app in the Google Play Store with the id: $packageName";
+        "Can't find an app in the Google Play Store with the id: $packageName";
       } else {
         newVersion = RegExp(r',\[\[\["([0-9,\.]*)"]],')
             .firstMatch(response.body)!
@@ -121,10 +128,10 @@ Future<AppCheckerResult> _checkApkPureStore(
     final response = await http.get(uri);
     if (response.statusCode != 200) {
       errorMsg =
-          "Can't find an app in the ApkPure Store with the id: $packageName";
+      "Can't find an app in the ApkPure Store with the id: $packageName";
     } else {
       newVersion = RegExp(
-              r'<div class="details-sdk"><span itemprop="version">(.*?)<\/span>for Android<\/div>')
+          r'<div class="details-sdk"><span itemprop="version">(.*?)<\/span>for Android<\/div>')
           .firstMatch(response.body)!
           .group(1)!
           .trim();
@@ -155,11 +162,11 @@ class AppCheckerResult {
   final String? errorMessage;
 
   AppCheckerResult(
-    this.currentVersion,
-    this.newVersion,
-    this.appURL,
-    this.errorMessage,
-  );
+      this.currentVersion,
+      this.newVersion,
+      this.appURL,
+      this.errorMessage,
+      );
 
   /// return `true` if update is available
   bool get canUpdate =>
@@ -167,9 +174,9 @@ class AppCheckerResult {
 
   bool _shouldUpdate(String versionA, String versionB) {
     final versionNumbersA =
-        versionA.split(".").map((e) => int.tryParse(e) ?? 0).toList();
+    versionA.split(".").map((e) => int.tryParse(e) ?? 0).toList();
     final versionNumbersB =
-        versionB.split(".").map((e) => int.tryParse(e) ?? 0).toList();
+    versionB.split(".").map((e) => int.tryParse(e) ?? 0).toList();
 
     final int versionASize = versionNumbersA.length;
     final int versionBSize = versionNumbersB.length;
